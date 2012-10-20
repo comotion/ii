@@ -36,7 +36,7 @@ struct Channel {
 static int irc;
 static time_t last_response;
 static Channel *channels = NULL;
-static char *host = "irc.freenode.net";
+static char *host = "gibson.freenode.net";
 static char nick[32];			/* might change while running */
 static char path[_POSIX_PATH_MAX];
 static char message[PIPE_BUF]; /* message buf used for communication */
@@ -200,23 +200,20 @@ static size_t tokenize(char **result, size_t reslen, char *str, char delim) {
 }
 
 static void print_out(char *channel, char *buf) {
-	static char outfile[256], server[256], buft[18];
+	static char outfile[256];
 	FILE *out = NULL;
-	time_t t = time(0);
 
-	if(channel) snprintf(server, sizeof(server), "-!- %s", channel);
-	if(strstr(buf, server)) channel="";
 	create_filepath(outfile, sizeof(outfile), channel, "out");
+	if(channel && channel[0]) add_channel(channel);
 	if(!(out = fopen(outfile, "a"))) return;
 	if(channel && channel[0]) add_channel(channel);
 
-	strftime(buft, sizeof(buft), "%F %R", localtime(&t));
-	fprintf(out, "%s %s\n", buft, buf);
+	fprintf(out, "%s\n", buf);
 	fclose(out);
 }
 
 static void proc_channels_privmsg(char *channel, char *buf) {
-	snprintf(message, PIPE_BUF, "<%s> %s", nick, buf);
+	snprintf(message, PIPE_BUF, "%s #%s", buf, nick);
 	print_out(channel, message);
 	snprintf(message, PIPE_BUF, "PRIVMSG %s :%s\r\n", channel, buf);
 	write(irc, message, strlen(message));
@@ -241,9 +238,9 @@ static void proc_channels_input(Channel *c, char *buf) {
 				add_channel(&buf[3]);
 			}
 			else if(p){
-				add_channel(&buf[3]);
-				proc_channels_privmsg(&buf[3], p + 1);
-				return;
+					add_channel(&buf[3]);
+					proc_channels_privmsg(&buf[3], p + 1);
+					return;
 			}
 			break;
 		case 't':
@@ -251,7 +248,7 @@ static void proc_channels_input(Channel *c, char *buf) {
 			break;
 		case 'a':
 			if(strlen(buf)>=3){
-				snprintf(message, PIPE_BUF, "-!- %s is away \"%s\"", nick, &buf[3]);
+				snprintf(message, PIPE_BUF, "#-!- %s is away \"%s\"", nick, &buf[3]);
 				print_out(c->name, message);
 			}
 			if(buf[2] == 0 || strlen(buf)<3) /* or used to make else part safe */
@@ -346,27 +343,29 @@ static void proc_server_cmd(char *buf) {
 		print_out(0, message);
 		return;
 	} else if(!strncmp("ERROR", argv[TOK_CMD], 6))
-		snprintf(message, PIPE_BUF, "-!- error %s", argv[TOK_TEXT] ? argv[TOK_TEXT] : "unknown");
+		snprintf(message, PIPE_BUF, "#-!- error %s", argv[TOK_TEXT] ? argv[TOK_TEXT] : "unknown");
 	else if(!strncmp("JOIN", argv[TOK_CMD], 5)) {
 		if (argv[TOK_TEXT] != NULL)
 			argv[TOK_CHAN] = argv[TOK_TEXT];
-		snprintf(message, PIPE_BUF, "-!- %s(%s) has joined %s", argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
+		snprintf(message, PIPE_BUF, "#-!- %s(%s) has joined %s", argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
 	} else if(!strncmp("PART", argv[TOK_CMD], 5)) {
-		snprintf(message, PIPE_BUF, "-!- %s(%s) has left %s", argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
+     if (!strcmp(nick, argv[TOK_NICKSRV]))                                                                       
+        return;
+		snprintf(message, PIPE_BUF, "#-!- %s(%s) has left %s", argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_CHAN]);
 	} else if(!strncmp("MODE", argv[TOK_CMD], 5))
-		snprintf(message, PIPE_BUF, "-!- %s changed mode/%s -> %s %s", argv[TOK_NICKSRV], argv[TOK_CMD + 1] ? argv[TOK_CMD + 1] : "" , argv[TOK_CMD + 2]? argv[TOK_CMD + 2] : "", argv[TOK_CMD + 3] ? argv[TOK_CMD + 3] : "");
+		snprintf(message, PIPE_BUF, "#-!- %s changed mode/%s -> %s %s", argv[TOK_NICKSRV], argv[TOK_CMD + 1] ? argv[TOK_CMD + 1] : "" , argv[TOK_CMD + 2]? argv[TOK_CMD + 2] : "", argv[TOK_CMD + 3] ? argv[TOK_CMD + 3] : "");
 	else if(!strncmp("QUIT", argv[TOK_CMD], 5))
-		snprintf(message, PIPE_BUF, "-!- %s(%s) has quit \"%s\"", argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+		snprintf(message, PIPE_BUF, "#-!- %s(%s) has quit \"%s\"", argv[TOK_NICKSRV], argv[TOK_USER], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
 	else if(!strncmp("NICK", argv[TOK_CMD], 5))
-		snprintf(message, PIPE_BUF, "-!- %s changed nick to %s", argv[TOK_NICKSRV], argv[TOK_TEXT]);
+		snprintf(message, PIPE_BUF, "#-!- %s changed nick to %s", argv[TOK_NICKSRV], argv[TOK_TEXT]);
 	else if(!strncmp("TOPIC", argv[TOK_CMD], 6))
-		snprintf(message, PIPE_BUF, "-!- %s changed topic to \"%s\"", argv[TOK_NICKSRV], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+		snprintf(message, PIPE_BUF, "#-!- %s changed topic to \"%s\"", argv[TOK_NICKSRV], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
 	else if(!strncmp("KICK", argv[TOK_CMD], 5))
-		snprintf(message, PIPE_BUF, "-!- %s kicked %s (\"%s\")", argv[TOK_NICKSRV], argv[TOK_ARG], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+		snprintf(message, PIPE_BUF, "#-!- %s kicked %s (\"%s\")", argv[TOK_NICKSRV], argv[TOK_ARG], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
 	else if(!strncmp("NOTICE", argv[TOK_CMD], 7))
-		snprintf(message, PIPE_BUF, "-!- \"%s\")", argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+		snprintf(message, PIPE_BUF, "#-!- \"%s\")", argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
 	else if(!strncmp("PRIVMSG", argv[TOK_CMD], 8))
-		snprintf(message, PIPE_BUF, "<%s> %s", argv[TOK_NICKSRV], argv[TOK_TEXT] ? argv[TOK_TEXT] : "");
+		snprintf(message, PIPE_BUF, "%s #%s", argv[TOK_TEXT] ? argv[TOK_TEXT] : "", argv[TOK_NICKSRV]);
 	if(!argv[TOK_CHAN] || !strncmp(argv[TOK_CHAN], nick, strlen(nick)))
 		print_out(argv[TOK_NICKSRV], message);
 	else
@@ -437,7 +436,7 @@ static void run() {
 			exit(EXIT_FAILURE);
 		} else if(r == 0) {
 			if(time(NULL) - last_response >= PING_TIMEOUT) {
-				print_out(NULL, "-!- ii shutting down: ping timeout");
+				print_out(NULL, "#-!- ii shutting down: ping timeout");
 				exit(EXIT_FAILURE);
 			}
 			write(irc, ping_msg, strlen(ping_msg));
@@ -456,16 +455,11 @@ static void run() {
 int main(int argc, char *argv[]) {
 	int i;
 	unsigned short port = SERVER_PORT;
-	struct passwd *spw = getpwuid(getuid());
 	char *key = NULL, *fullname = NULL;
 	char prefix[_POSIX_PATH_MAX];
 
-	if(!spw) {
-		fputs("ii: getpwuid() failed\n", stderr);
-		exit(EXIT_FAILURE);
-	}
-	snprintf(nick, sizeof(nick), "%s", spw->pw_name);
-	snprintf(prefix, sizeof(prefix),"%s/irc", spw->pw_dir);
+	snprintf(nick, sizeof(nick), "%s", "tty32");
+	snprintf(prefix, sizeof(prefix),"%s/irc", "");
 	if (argc <= 1 || (argc == 2 && argv[1][0] == '-' && argv[1][1] == 'h')) usage();
 
 	for(i = 1; (i + 1 < argc) && (argv[i][0] == '-'); i++) {
@@ -474,7 +468,7 @@ int main(int argc, char *argv[]) {
 			case 's': host = argv[++i]; break;
 			case 'p': port = strtol(argv[++i], NULL, 10); break;
 			case 'n': snprintf(nick,sizeof(nick),"%s", argv[++i]); break;
-			case 'k': key = getenv(argv[++i]); break;
+			case 'k': key = argv[++i]; break;
 			case 'f': fullname = argv[++i]; break;
 			default: usage(); break;
 		}

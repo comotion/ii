@@ -1,3 +1,5 @@
+Hacks on top of ii to facilitate tty23 evolution
+
 Abstract
 --------
 ii is a minimalistic FIFO and filesystem based IRC client.  It creates an irc
